@@ -1,0 +1,11 @@
+{
+  "enable-fast-start": true,
+  "track-widget-creation": false,
+  "cache-size-gb": 10,
+  "enable-impeller": true,
+  "android-build-cache": true,
+  "gradle-daemon": true,
+  "parallel-build": true,
+  "configure-on-demand": true,
+  "max-workers": 8
+}

@@ -13,10 +13,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
+        freeCompilerArgs += listOf("-Xopt-in=kotlin.RequiresOptIn")
     }
 
     defaultConfig {
@@ -28,6 +30,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Enable multidex for faster builds
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -36,6 +41,9 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             isCrunchPngs = false
+            // Additional optimizations
+            isDebuggable = true
+            isJniDebuggable = false
         }
         release {
             // TODO: Add your own signing config for the release build.
@@ -43,8 +51,33 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+    
+    // Optimize packaging
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt"
+            )
+        }
+    }
+    
+    // Enable build caching
+    buildFeatures {
+        buildConfig = true
+    }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
