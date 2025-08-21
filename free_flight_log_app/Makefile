@@ -16,7 +16,6 @@ help:
 run-fast:
 	@flutter run -d Pixel \
 		--debug \
-		--no-tree-shake-icons \
 		--target-platform=android-arm64 \
 		--dart-define=FLUTTER_BUILD_MODE=debug
 
@@ -24,7 +23,6 @@ run-fast:
 run-emulator:
 	@flutter run -d emulator-5554 \
 		--debug \
-		--no-tree-shake-icons \
 		--target-platform=android-arm64 \
 		--dart-define=FLUTTER_BUILD_MODE=debug
 
