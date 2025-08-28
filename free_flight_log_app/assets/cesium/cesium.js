@@ -875,6 +875,14 @@ class AltitudeOverlay {
         return !isEllipsoid;
     }
     
+    // Public method to retry terrain enhancement (called when terrain loads later)
+    retryTerrainEnhancement() {
+        if (this._hasRealTerrain()) {
+            cesiumLog.info('AltitudeOverlay: Terrain now available, enhancing with terrain data');
+            this._enhanceWithTerrainData();
+        }
+    }
+    
     async _enhanceWithTerrainData() {
         try {
             cesiumLog.debug('AltitudeOverlay: Starting terrain sampling process');
@@ -902,27 +910,39 @@ class AltitudeOverlay {
             
             cesiumLog.info('AltitudeOverlay: Terrain sampling completed successfully');
             
-            // Store terrain heights
+            // Store terrain heights with validation
             this.terrainHeights.launch = updatedPositions[0].height;
             this.terrainHeights.landing = updatedPositions[1].height;
             
-            cesiumLog.info(`AltitudeOverlay: Terrain heights - Launch: ${Math.round(this.terrainHeights.launch)}m, Landing: ${Math.round(this.terrainHeights.landing)}m`);
+            // Check for valid terrain data
+            const launchTerrainValid = !isNaN(this.terrainHeights.launch) && this.terrainHeights.launch !== undefined;
+            const landingTerrainValid = !isNaN(this.terrainHeights.landing) && this.terrainHeights.landing !== undefined;
             
-            // Calculate AGL (Above Ground Level)
-            const launchAGL = this.launchGPSAltitude - this.terrainHeights.launch;
-            const landingAGL = this.landingGPSAltitude - this.terrainHeights.landing;
+            cesiumLog.info(`AltitudeOverlay: Terrain heights - Launch: ${launchTerrainValid ? Math.round(this.terrainHeights.launch) + 'm' : 'unavailable'}, Landing: ${landingTerrainValid ? Math.round(this.terrainHeights.landing) + 'm' : 'unavailable'}`);
             
-            cesiumLog.info(`AltitudeOverlay: AGL calculated - Launch: ${Math.round(launchAGL)}m, Landing: ${Math.round(landingAGL)}m`);
-            
-            // Update display with AGL information
+            // Update display with AGL information where terrain data is valid
             if (this.launchElement) {
-                this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m / ${Math.round(launchAGL)}m AGL`;
-                cesiumLog.debug('AltitudeOverlay: Updated launch display with AGL');
+                if (launchTerrainValid) {
+                    const launchAGL = this.launchGPSAltitude - this.terrainHeights.launch;
+                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m / ${Math.round(launchAGL)}m AGL`;
+                    cesiumLog.info(`AltitudeOverlay: Launch AGL calculated - ${Math.round(launchAGL)}m`);
+                } else {
+                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m GPS`;
+                    cesiumLog.debug('AltitudeOverlay: Launch terrain unavailable, showing GPS only');
+                }
+                cesiumLog.debug('AltitudeOverlay: Updated launch display');
             }
             
             if (this.landingElement) {
-                this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m / ${Math.round(landingAGL)}m AGL`;
-                cesiumLog.debug('AltitudeOverlay: Updated landing display with AGL');
+                if (landingTerrainValid) {
+                    const landingAGL = this.landingGPSAltitude - this.terrainHeights.landing;
+                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m / ${Math.round(landingAGL)}m AGL`;
+                    cesiumLog.info(`AltitudeOverlay: Landing AGL calculated - ${Math.round(landingAGL)}m`);
+                } else {
+                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m GPS`;
+                    cesiumLog.debug('AltitudeOverlay: Landing terrain unavailable, showing GPS only');
+                }
+                cesiumLog.debug('AltitudeOverlay: Updated landing display');
             }
             
             cesiumLog.info('AltitudeOverlay: Display updated with GPS and AGL altitudes');
@@ -1011,10 +1031,7 @@ class CesiumFlightApp {
         
         // Create viewer with optimized settings
         this.viewer = new Cesium.Viewer("cesiumContainer", {
-            terrain: Cesium.Terrain.fromWorldTerrain({
-                requestWaterMask: false,
-                requestVertexNormals: true
-            }),
+            // Terrain will be loaded after viewer creation based on savedTerrainEnabled
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
             resolutionScale: this.currentResolution,  // Apply adaptive resolution scaling
@@ -1039,6 +1056,9 @@ class CesiumFlightApp {
         
         this._configureScene();
         this._setupInitialView(config);
+        
+        // Load terrain asynchronously if enabled
+        this._loadTerrain(config);
         
         // Apply dynamic lighting for initial provider (after viewer is fully initialized)
         setTimeout(() => {
@@ -1850,6 +1870,44 @@ class CesiumFlightApp {
     
     
     
+    
+    async _loadTerrain(config) {
+        // Always enable terrain for AGL calculations
+        const terrainEnabled = true; // Force terrain enabled regardless of preference
+        
+        if (terrainEnabled) {
+            cesiumLog.info('Loading terrain provider...');
+            
+            try {
+                // Create terrain provider asynchronously
+                const terrainProvider = await Cesium.CesiumTerrainProvider.fromUrl(
+                    Cesium.IonResource.fromAssetId(1),
+                    {
+                        requestWaterMask: false,
+                        requestVertexNormals: true
+                    }
+                );
+                
+                // Apply terrain to the globe
+                this.viewer.scene.globe.terrainProvider = terrainProvider;
+                
+                cesiumLog.info('Terrain provider loaded successfully');
+                
+                // Notify altitude overlay if it exists that terrain is now available
+                if (this.altitudeOverlay && typeof this.altitudeOverlay.retryTerrainEnhancement === 'function') {
+                    setTimeout(() => {
+                        cesiumLog.debug('Triggering altitude overlay terrain enhancement after terrain load');
+                        this.altitudeOverlay.retryTerrainEnhancement();
+                    }, 500);
+                }
+            } catch (error) {
+                cesiumLog.error('Failed to load terrain provider: ' + error.message);
+                // Keep default ellipsoid terrain
+            }
+        } else {
+            cesiumLog.info('Terrain disabled by user preference');
+        }
+    }
     
     _configureCaching() {
         const scene = this.viewer.scene;
