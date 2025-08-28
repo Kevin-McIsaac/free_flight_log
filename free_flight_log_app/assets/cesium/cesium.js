@@ -620,7 +620,15 @@ class TrackPrimitiveCollection {
                     })
                 }),
                 appearance: new Cesium.PolylineColorAppearance({
-                    translucent: true
+                    translucent: true,
+                    renderState: {
+                        depthTest: {
+                            enabled: true,
+                            func: Cesium.DepthFunction.LEQUAL  // Shows when at or behind terrain
+                        },
+                        depthMask: false,  // Don't write to depth buffer
+                        blending: Cesium.BlendingState.ALPHA_BLEND
+                    }
                 }),
                 asynchronous: false
             })
@@ -691,7 +699,15 @@ class TrackPrimitiveCollection {
                     })
                 }),
                 appearance: new Cesium.PolylineColorAppearance({
-                    translucent: true
+                    translucent: true,
+                    renderState: {
+                        depthTest: {
+                            enabled: true,
+                            func: Cesium.DepthFunction.LEQUAL  // Shows when at or behind terrain
+                        },
+                        depthMask: false,  // Don't write to depth buffer
+                        blending: Cesium.BlendingState.ALPHA_BLEND
+                    }
                 }),
                 asynchronous: false
             })
@@ -883,9 +899,19 @@ class AltitudeOverlay {
         }
     }
     
-    async _enhanceWithTerrainData() {
+    async _enhanceWithTerrainData(retryCount = 0) {
+        const maxRetries = 3;
+        const retryDelay = [1000, 2000, 4000]; // Progressive delays: 1s, 2s, 4s
+        
+        // Clear previous terrain heights on retry to avoid persisting bad data
+        if (retryCount > 0) {
+            cesiumLog.info(`AltitudeOverlay: Retry attempt ${retryCount} - clearing previous terrain heights`);
+            this.terrainHeights.launch = null;
+            this.terrainHeights.landing = null;
+        }
+        
         try {
-            cesiumLog.debug('AltitudeOverlay: Starting terrain sampling process');
+            cesiumLog.debug(`AltitudeOverlay: Starting terrain sampling process (attempt ${retryCount + 1}/${maxRetries + 1})`);
             
             // Create Cartographic positions from degrees
             const launchPosition = Cesium.Cartographic.fromDegrees(
@@ -910,49 +936,115 @@ class AltitudeOverlay {
             
             cesiumLog.info('AltitudeOverlay: Terrain sampling completed successfully');
             
-            // Store terrain heights with validation
-            this.terrainHeights.launch = updatedPositions[0].height;
-            this.terrainHeights.landing = updatedPositions[1].height;
+            // Store terrain heights with detailed validation and logging
+            const launchHeight = updatedPositions[0].height;
+            const landingHeight = updatedPositions[1].height;
             
-            // Check for valid terrain data
-            const launchTerrainValid = !isNaN(this.terrainHeights.launch) && this.terrainHeights.launch !== undefined;
-            const landingTerrainValid = !isNaN(this.terrainHeights.landing) && this.terrainHeights.landing !== undefined;
+            cesiumLog.info(`AltitudeOverlay: Raw terrain data - Launch: ${launchHeight}m, Landing: ${landingHeight}m`);
             
-            cesiumLog.info(`AltitudeOverlay: Terrain heights - Launch: ${launchTerrainValid ? Math.round(this.terrainHeights.launch) + 'm' : 'unavailable'}, Landing: ${landingTerrainValid ? Math.round(this.terrainHeights.landing) + 'm' : 'unavailable'}`);
+            // Validate and store terrain heights
+            const launchTerrainValid = !isNaN(launchHeight) && launchHeight !== undefined;
+            const landingTerrainValid = !isNaN(landingHeight) && landingHeight !== undefined;
             
-            // Update display with AGL information where terrain data is valid
-            if (this.launchElement) {
-                if (launchTerrainValid) {
-                    const launchAGL = this.launchGPSAltitude - this.terrainHeights.launch;
-                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m / ${Math.round(launchAGL)}m AGL`;
-                    cesiumLog.info(`AltitudeOverlay: Launch AGL calculated - ${Math.round(launchAGL)}m`);
-                } else {
-                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m GPS`;
-                    cesiumLog.debug('AltitudeOverlay: Launch terrain unavailable, showing GPS only');
-                }
-                cesiumLog.debug('AltitudeOverlay: Updated launch display');
+            if (launchTerrainValid) {
+                this.terrainHeights.launch = launchHeight;
+                cesiumLog.debug(`AltitudeOverlay: Launch terrain height stored: ${Math.round(launchHeight)}m`);
+            } else {
+                this.terrainHeights.launch = null;
+                cesiumLog.warn(`AltitudeOverlay: Invalid launch terrain height: ${launchHeight} (NaN: ${isNaN(launchHeight)}, undefined: ${launchHeight === undefined})`);
             }
             
-            if (this.landingElement) {
-                if (landingTerrainValid) {
-                    const landingAGL = this.landingGPSAltitude - this.terrainHeights.landing;
-                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m / ${Math.round(landingAGL)}m AGL`;
-                    cesiumLog.info(`AltitudeOverlay: Landing AGL calculated - ${Math.round(landingAGL)}m`);
-                } else {
-                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m GPS`;
-                    cesiumLog.debug('AltitudeOverlay: Landing terrain unavailable, showing GPS only');
-                }
-                cesiumLog.debug('AltitudeOverlay: Updated landing display');
+            if (landingTerrainValid) {
+                this.terrainHeights.landing = landingHeight;
+                cesiumLog.debug(`AltitudeOverlay: Landing terrain height stored: ${Math.round(landingHeight)}m`);
+            } else {
+                this.terrainHeights.landing = null;
+                cesiumLog.warn(`AltitudeOverlay: Invalid landing terrain height: ${landingHeight} (NaN: ${isNaN(landingHeight)}, undefined: ${landingHeight === undefined})`);
             }
             
-            cesiumLog.info('AltitudeOverlay: Display updated with GPS and AGL altitudes');
+            cesiumLog.info(`AltitudeOverlay: Terrain heights processed - Launch: ${launchTerrainValid ? Math.round(this.terrainHeights.launch) + 'm' : 'unavailable'}, Landing: ${landingTerrainValid ? Math.round(this.terrainHeights.landing) + 'm' : 'unavailable'}`);
+            
+            // Check if we should retry for NaN values
+            const hasNaNValues = !launchTerrainValid || !landingTerrainValid;
+            if (hasNaNValues && retryCount < maxRetries) {
+                const delay = retryDelay[retryCount];
+                cesiumLog.info(`AltitudeOverlay: Some terrain data unavailable, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries + 1})`);
+                
+                // Schedule retry with progressive delay (non-blocking)
+                setTimeout(() => {
+                    this._enhanceWithTerrainData(retryCount + 1);
+                }, delay);
+                
+                // Still update display with current data
+                this._updateAltitudeDisplay(launchTerrainValid, landingTerrainValid);
+                return;
+            }
+            
+            // Update display with final results
+            this._updateAltitudeDisplay(launchTerrainValid, landingTerrainValid);
             
         } catch (error) {
             cesiumLog.error(`AltitudeOverlay: Error sampling terrain heights: ${error.message}`);
             cesiumLog.debug(`AltitudeOverlay: Full error details: ${error.stack}`);
-            // Keep GPS-only display on error
-            cesiumLog.info('AltitudeOverlay: Falling back to GPS-only display due to terrain sampling error');
+            
+            // Retry on error if attempts remain
+            if (retryCount < maxRetries) {
+                const delay = retryDelay[retryCount];
+                cesiumLog.info(`AltitudeOverlay: Retrying after error in ${delay}ms (attempt ${retryCount + 1}/${maxRetries + 1})`);
+                
+                setTimeout(() => {
+                    this._enhanceWithTerrainData(retryCount + 1);
+                }, delay);
+            } else {
+                cesiumLog.info('AltitudeOverlay: Max retries reached, falling back to GPS-only display');
+                // Keep GPS-only display on final failure
+            }
         }
+    }
+    
+    _updateAltitudeDisplay(launchTerrainValid, landingTerrainValid) {
+        // Update display with AGL information where terrain data is valid
+        if (this.launchElement) {
+            if (launchTerrainValid) {
+                const launchAGL = this.launchGPSAltitude - this.terrainHeights.launch;
+                cesiumLog.info(`AltitudeOverlay: Launch calculation - GPS: ${this.launchGPSAltitude}m, Terrain: ${this.terrainHeights.launch}m, AGL: ${Math.round(launchAGL)}m`);
+                
+                // Check for extreme AGL values that indicate bad terrain data
+                if (Math.abs(launchAGL) > 50000) {
+                    cesiumLog.warn(`AltitudeOverlay: Extreme launch AGL detected (${Math.round(launchAGL)}m) - likely bad terrain data, showing GPS only`);
+                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m GPS`;
+                } else {
+                    this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m / ${Math.round(launchAGL)}m AGL`;
+                    cesiumLog.info(`AltitudeOverlay: Launch AGL calculated - ${Math.round(launchAGL)}m`);
+                }
+            } else {
+                this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m GPS`;
+                cesiumLog.debug('AltitudeOverlay: Launch terrain unavailable, showing GPS only');
+            }
+            cesiumLog.debug('AltitudeOverlay: Updated launch display');
+        }
+        
+        if (this.landingElement) {
+            if (landingTerrainValid) {
+                const landingAGL = this.landingGPSAltitude - this.terrainHeights.landing;
+                cesiumLog.info(`AltitudeOverlay: Landing calculation - GPS: ${this.landingGPSAltitude}m, Terrain: ${this.terrainHeights.landing}m, AGL: ${Math.round(landingAGL)}m`);
+                
+                // Check for extreme AGL values that indicate bad terrain data
+                if (Math.abs(landingAGL) > 50000) {
+                    cesiumLog.warn(`AltitudeOverlay: Extreme landing AGL detected (${Math.round(landingAGL)}m) - likely bad terrain data, showing GPS only`);
+                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m GPS`;
+                } else {
+                    this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m / ${Math.round(landingAGL)}m AGL`;
+                    cesiumLog.info(`AltitudeOverlay: Landing AGL calculated - ${Math.round(landingAGL)}m`);
+                }
+            } else {
+                this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m GPS`;
+                cesiumLog.debug('AltitudeOverlay: Landing terrain unavailable, showing GPS only');
+            }
+            cesiumLog.debug('AltitudeOverlay: Updated landing display');
+        }
+        
+        cesiumLog.info('AltitudeOverlay: Display updated with GPS and AGL altitudes');
     }
 }
 
@@ -1184,7 +1276,7 @@ class CesiumFlightApp {
         
         // Dynamic lighting will be set separately after provider is fully loaded
         globe.showGroundAtmosphere = true;
-        globe.depthTestAgainstTerrain = true;
+        globe.depthTestAgainstTerrain = false; // Allow tracks to show through terrain when underground
         globe.terrainExaggeration = 1.0;
         
         // Use lighter base color for better visibility
