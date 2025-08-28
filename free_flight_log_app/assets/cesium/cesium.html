@@ -129,6 +129,45 @@
             color: rgba(255, 255, 255, 0.9);
             user-select: none;
         }
+
+        /* Terrain toggle button */
+        #terrainButton {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            background-color: rgba(42, 42, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+            margin-left: 4px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        #terrainButton:hover {
+            background-color: rgba(60, 60, 60, 0.9);
+        }
+        
+        #terrainButton:active {
+            background-color: rgba(70, 70, 70, 0.9);
+        }
+        
+        #terrainButton.active {
+            background-color: rgba(76, 175, 80, 0.8);
+            border-color: rgba(76, 175, 80, 0.8);
+        }
+        
+        #terrainButton.active:hover {
+            background-color: rgba(76, 175, 80, 0.9);
+        }
+        
+        #terrainButton .material-icons {
+            font-size: 18px;
+            color: rgba(255, 255, 255, 0.9);
+            user-select: none;
+        }
         
         /* Minimal speed picker - Material dark theme */
         #speedPicker {
@@ -191,6 +230,9 @@
             margin-left: 4px;
         " title="Toggle camera following">
             <span class="material-icons" style="font-size: 18px; color: rgba(255, 255, 255, 0.9);">videocam</span>
+        </button>
+        <button id="terrainButton" onclick="if(typeof toggleTerrain === 'function') toggleTerrain()" title="Toggle Cesium World Terrain">
+            <span class="material-icons">terrain</span>
         </button>
         <select id="speedPicker" onchange="if(typeof changePlaybackSpeed === 'function') changePlaybackSpeed(this.value)">
             <option value="1">1x</option>

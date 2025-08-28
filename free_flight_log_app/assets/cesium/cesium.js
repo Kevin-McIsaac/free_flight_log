@@ -353,22 +353,64 @@ class CesiumPerformanceMonitor {
 // ============================================================================
 
 class FlightDataSource extends Cesium.CustomDataSource {
-    constructor(name, igcPoints) {
+    constructor(name, igcPoints, viewer) {
         super(name);
         
-        // Store raw data
+        // Store raw data and viewer reference
         this.igcPoints = igcPoints;
+        this.viewer = viewer;
         this.positions = [];
         this.times = [];
         this.timezone = igcPoints[0]?.timezone || '+00:00';
         this.timezoneOffsetSeconds = this._parseTimezoneOffset(this.timezone);
         
-        // Process data once
-        this._processFlightData();
+        // Store original GPS altitudes for reverting terrain correction
+        this.originalAltitudes = [];
         
-        // Create entities
-        this._createCurtainWall();
-        this._createPilotEntity();
+        // Altitude correction data
+        this.correctedAltitudes = [];
+        this.altitudeCorrectionApplied = false;
+        
+        // Terrain state tracking - detect actual terrain state from viewer
+        this._terrainEnabled = this._detectInitialTerrainState();
+        
+        // Process data - this will be async if terrain correction is applied
+        this._initializeFlightData();
+    }
+    
+    _detectInitialTerrainState() {
+        // Check if viewer has actual terrain provider (not just ellipsoid)
+        const viewerTerrainProvider = this.viewer?.terrainProvider;
+        const globeTerrainProvider = this.viewer?.scene?.globe?.terrainProvider;
+        
+        // Use the globe terrain provider as it's the actual active one
+        const activeTerrainProvider = globeTerrainProvider || viewerTerrainProvider;
+        
+        if (activeTerrainProvider) {
+            const providerName = activeTerrainProvider.constructor.name;
+            const isReady = activeTerrainProvider.ready;
+            // Use capability-based detection instead of class name (minification-safe)
+            const hasTerrainCapability = typeof activeTerrainProvider.requestTileGeometry === 'function';
+            const isEllipsoid = providerName === 'EllipsoidTerrainProvider';
+            const isTerrain = hasTerrainCapability && !isEllipsoid;
+            
+            cesiumLog.info(`FlightDataSource: Terrain check - provider: ${providerName}, ready: ${isReady}, isTerrain: ${isTerrain}`);
+            
+            if (isReady && isTerrain) {
+                cesiumLog.info(`FlightDataSource: Detected terrain is enabled - provider: ${providerName}`);
+                return true;
+            } else if (isReady && providerName === 'EllipsoidTerrainProvider') {
+                cesiumLog.info('FlightDataSource: Detected terrain is disabled - using ellipsoid terrain');
+                return false;
+            } else {
+                // Provider exists but not ready yet - this shouldn't happen if we waited properly
+                cesiumLog.warn(`FlightDataSource: Terrain provider not ready - provider: ${providerName}, ready: ${isReady}`);
+                return isTerrain; // Return true if it's a terrain provider, even if not ready
+            }
+        } else {
+            cesiumLog.info('FlightDataSource: No terrain provider found');
+            return false;
+        }
     }
     
     _parseTimezoneOffset(timezone) {
@@ -381,21 +423,114 @@ class FlightDataSource extends Cesium.CustomDataSource {
         return sign * ((hours * 3600) + (minutes * 60));
     }
     
-    _processFlightData() {
+    async _initializeFlightData() {
+        // First, process basic flight data
+        this._processBasicFlightData();
+        
+        // Store original GPS altitudes for later use
+        this._storeOriginalAltitudes();
+        
+        // Start with GPS altitudes
+        this._updatePositionsWithOriginalAltitudes();
+        
+        // Apply initial terrain correction if terrain is enabled
+        if (this._terrainEnabled) {
+            cesiumLog.info('FlightDataSource: Terrain detected during initialization - applying terrain correction');
+            // Add delay to ensure terrain provider is fully ready
+            setTimeout(async () => {
+                const correctionApplied = await this.applyTerrainCorrection();
+                if (!correctionApplied) {
+                    cesiumLog.warn('FlightDataSource: Initial terrain correction failed - terrain may not be ready yet');
+                }
+            }, 1500); // Longer delay for terrain provider readiness
+        } else {
+            cesiumLog.info('FlightDataSource: No terrain detected - using original GPS altitudes');
+        }
+        
+        // Create entities after positions are finalized
+        this._createCurtainWall();
+        this._createPilotEntity();
+        
+        // Initialize terrain button state after DOM is ready
+        setTimeout(() => this._initializeTerrainButtonState(), 100);
+    }
+    
+    async _correctAltitudesForTerrain() {
+        // Enhanced debugging for terrain provider state - check both viewer and globe terrain providers
+        const viewerTerrainProvider = this.viewer?.terrainProvider;
+        const globeTerrainProvider = this.viewer?.scene?.globe?.terrainProvider;
+        
+        cesiumLog.info(`Terrain correction check - viewer: ${!!this.viewer}, viewerTerrainProvider: ${!!viewerTerrainProvider}, globeTerrainProvider: ${!!globeTerrainProvider}, points: ${this.igcPoints.length}`);
+        
+        // Use the globe terrain provider as it's the actual active one
+        const activeTerrainProvider = globeTerrainProvider || viewerTerrainProvider;
+        
+        if (activeTerrainProvider) {
+            cesiumLog.info(`Terrain provider type: ${activeTerrainProvider.constructor.name}`);
+            cesiumLog.info(`Terrain provider ready: ${activeTerrainProvider.ready}`);
+            cesiumLog.info(`Terrain provider is ellipsoid: ${activeTerrainProvider.constructor.name === 'EllipsoidTerrainProvider'}`);
+        }
+        
+        // Check if we have a real terrain provider (not just ellipsoid) and sufficient points
+        if (!activeTerrainProvider || activeTerrainProvider.constructor.name === 'EllipsoidTerrainProvider' || this.igcPoints.length < 2) {
+            cesiumLog.info('Skipping terrain correction: no terrain provider or insufficient points');
+            return;
+        }
+        
+        // Need to consider the case when the vario is turn on in flight, i.e, velocity is zero
+        const launchPoint = this.igcPoints[0];
+        const landingPoint = this.igcPoints[this.igcPoints.length - 1];
+        
+        // Create Cartographic positions for launch and landing
+        const positions = [
+            Cesium.Cartographic.fromDegrees(launchPoint.longitude, launchPoint.latitude),
+            Cesium.Cartographic.fromDegrees(landingPoint.longitude, landingPoint.latitude)
+        ];
+        
+        cesiumLog.info('Sampling terrain at launch and landing points...');
+        const sampledPositions = await Cesium.sampleTerrainMostDetailed(
+            activeTerrainProvider, 
+            positions
+        );
+        
+        const launchTerrainHeight = sampledPositions[0].height;
+        const landingTerrainHeight = sampledPositions[1].height;
+        
+        if (launchTerrainHeight === undefined || landingTerrainHeight === undefined) {
+            throw new Error('Failed to sample terrain heights');
+        }
+        
+        const launchGPSAltitude = launchPoint.gpsAltitude || launchPoint.altitude;
+        const landingGPSAltitude = landingPoint.gpsAltitude || landingPoint.altitude;
+        
+
+        const slope = (launchTerrainHeight- landingTerrainHeight)/(launchGPSAltitude - landingGPSAltitude)
+        const intercept = launchTerrainHeight - slope*launchGPSAltitude
+        cesiumLog.info(`Slope: ${slope}, intercept: ${intercept}`)
+        
+        // Apply altitude-based linear interpolation to all points
+        this.correctedAltitudes = new Array(this.igcPoints.length);
+        
+        for (let i = 0; i < this.igcPoints.length; i++) {
+            const point = this.igcPoints[i];
+            const gpsAltitude = point.gpsAltitude || point.altitude;
+            
+            this.correctedAltitudes[i] = slope * gpsAltitude + intercept;
+        }
+        
+        this.altitudeCorrectionApplied = true;
+        cesiumLog.info('Altitude correction applied successfully');
+    }
+    
+    _processBasicFlightData() {
         const processStart = performance.now();
         
-        // Build arrays once
+        // Build time array
         this.times = new Array(this.igcPoints.length);
-        this.positions = new Array(this.igcPoints.length);
         
         for (let i = 0; i < this.igcPoints.length; i++) {
             const point = this.igcPoints[i];
             this.times[i] = Cesium.JulianDate.fromIso8601(point.timestamp);
-            this.positions[i] = Cesium.Cartesian3.fromDegrees(
-                point.longitude, 
-                point.latitude, 
-                point.altitude
-            );
         }
         
         // Calculate time bounds
@@ -403,10 +538,209 @@ class FlightDataSource extends Cesium.CustomDataSource {
         this.stopTime = this.times[this.times.length - 1];
         this.totalDuration = Cesium.JulianDate.secondsDifference(this.stopTime, this.startTime);
         
+        PerformanceReporter.report('basicDataProcessing', performance.now() - processStart);
+    }
+    
+    _updatePositionsWithCorrectedAltitudes() {
+        const processStart = performance.now();
+        
+        // Build positions array using corrected altitudes if available
+        this.positions = new Array(this.igcPoints.length);
+        
+        for (let i = 0; i < this.igcPoints.length; i++) {
+            const point = this.igcPoints[i];
+            const altitude = this.altitudeCorrectionApplied ? 
+                this.correctedAltitudes[i] : 
+                (point.gpsAltitude || point.altitude);
+                
+            this.positions[i] = Cesium.Cartesian3.fromDegrees(
+                point.longitude, 
+                point.latitude, 
+                altitude
+            );
+        }
+        
         // Calculate bounding sphere for camera operations
         this.boundingSphere = Cesium.BoundingSphere.fromPoints(this.positions);
         
-        PerformanceReporter.report('dataProcessing', performance.now() - processStart);
+        PerformanceReporter.report('positionProcessing', performance.now() - processStart);
+    }
+    
+    _storeOriginalAltitudes() {
+        // Store original GPS altitudes for terrain correction reverting
+        this.originalAltitudes = new Array(this.igcPoints.length);
+        
+        for (let i = 0; i < this.igcPoints.length; i++) {
+            const point = this.igcPoints[i];
+            this.originalAltitudes[i] = point.gpsAltitude || point.altitude;
+        }
+        
+        cesiumLog.info(`Stored ${this.originalAltitudes.length} original GPS altitudes`);
+    }
+    
+    _updatePositionsWithOriginalAltitudes() {
+        const processStart = performance.now();
+        
+        // Build positions array using original GPS altitudes
+        this.positions = new Array(this.igcPoints.length);
+        
+        for (let i = 0; i < this.igcPoints.length; i++) {
+            const point = this.igcPoints[i];
+            const altitude = this.originalAltitudes[i];
+                
+            this.positions[i] = Cesium.Cartesian3.fromDegrees(
+                point.longitude, 
+                point.latitude, 
+                altitude
+            );
+        }
+        
+        // Calculate bounding sphere for camera operations
+        this.boundingSphere = Cesium.BoundingSphere.fromPoints(this.positions);
+        
+        PerformanceReporter.report('originalPositionProcessing', performance.now() - processStart);
+        cesiumLog.info('Updated positions with original GPS altitudes');
+    }
+    
+    async applyTerrainCorrection() {
+        // Dynamic terrain correction - can be called anytime when terrain is available
+        cesiumLog.info('Applying terrain correction dynamically...');
+        
+        // Enhanced debugging for terrain provider state
+        const viewerTerrainProvider = this.viewer?.terrainProvider;
+        const globeTerrainProvider = this.viewer?.scene?.globe?.terrainProvider;
+        
+        cesiumLog.info(`Terrain correction check - viewer: ${!!this.viewer}, viewerTerrainProvider: ${!!viewerTerrainProvider}, globeTerrainProvider: ${!!globeTerrainProvider}, points: ${this.igcPoints.length}`);
+        
+        // Use the globe terrain provider as it's the actual active one
+        const activeTerrainProvider = globeTerrainProvider || viewerTerrainProvider;
+        
+        if (activeTerrainProvider) {
+            cesiumLog.info(`Terrain provider type: ${activeTerrainProvider.constructor.name}`);
+            cesiumLog.info(`Terrain provider ready: ${activeTerrainProvider.ready}`);
+        }
+        
+        // Check if we have a real terrain provider (not just ellipsoid) and sufficient points
+        if (!activeTerrainProvider || activeTerrainProvider.constructor.name === 'EllipsoidTerrainProvider' || this.igcPoints.length < 2) {
+            cesiumLog.info('Cannot apply terrain correction: no terrain provider or insufficient points');
+            return false;
+        }
+        
+        try {
+            // Get launch and landing points
+            const launchPoint = this.igcPoints[0];
+            const landingPoint = this.igcPoints[this.igcPoints.length - 1];
+            
+            // Create Cartographic positions for launch and landing
+            const positions = [
+                Cesium.Cartographic.fromDegrees(launchPoint.longitude, launchPoint.latitude),
+                Cesium.Cartographic.fromDegrees(landingPoint.longitude, landingPoint.latitude)
+            ];
+            
+            cesiumLog.info('Sampling terrain at launch and landing points...');
+            const sampledPositions = await Cesium.sampleTerrainMostDetailed(
+                activeTerrainProvider, 
+                positions
+            );
+            
+            const launchTerrainHeight = sampledPositions[0].height;
+            const landingTerrainHeight = sampledPositions[1].height;
+            
+            if (launchTerrainHeight === undefined || landingTerrainHeight === undefined) {
+                throw new Error('Failed to sample terrain heights');
+            }
+            
+            const launchGPSAltitude = this.originalAltitudes[0];
+            const landingGPSAltitude = this.originalAltitudes[this.originalAltitudes.length - 1];
+            
+            const slope = (launchTerrainHeight - landingTerrainHeight) / (launchGPSAltitude - landingGPSAltitude);
+            const intercept = launchTerrainHeight - slope * launchGPSAltitude;
+            
+            cesiumLog.info(`Slope: ${slope}, intercept: ${intercept}`);
+            
+            // Calculate corrected altitudes for all points
+            this.correctedAltitudes = new Array(this.igcPoints.length);
+            
+            for (let i = 0; i < this.igcPoints.length; i++) {
+                const gpsAltitude = this.originalAltitudes[i];
+                this.correctedAltitudes[i] = slope * gpsAltitude + intercept;
+            }
+            
+            // Update positions with corrected altitudes
+            this._updatePositionsWithCorrectedAltitudes();
+            
+            // Update entities with new positions
+            this._updateEntitiesWithNewPositions();
+            
+            this.altitudeCorrectionApplied = true;
+            cesiumLog.info('Terrain correction applied successfully');
+            return true;
+            
+        } catch (error) {
+            cesiumLog.error(`Failed to apply terrain correction: ${error.message}`);
+            return false;
+        }
+    }
+    
+    removeTerrainCorrection() {
+        // Revert to original GPS altitudes
+        cesiumLog.info('Removing terrain correction - reverting to GPS altitudes...');
+        
+        // Safety check - ensure we have the necessary data
+        if (!this.originalGPSAltitudes || this.originalGPSAltitudes.length === 0) {
+            cesiumLog.warn('No original GPS altitudes available - terrain correction removal skipped');
+            return;
+        }
+        
+        // Update positions with original GPS altitudes
+        this._updatePositionsWithOriginalAltitudes();
+        
+        // Update entities with new positions
+        this._updateEntitiesWithNewPositions();
+        
+        // Clear correction data
+        this.correctedAltitudes = [];
+        this.altitudeCorrectionApplied = false;
+        
+        cesiumLog.info('Terrain correction removed - using original GPS altitudes');
+    }
+    
+    _updateEntitiesWithNewPositions() {
+        // Update the pilot entity with new positions
+        if (this.pilotEntity && this.pilotEntity.position instanceof Cesium.SampledPositionProperty) {
+            // Validate data before creating new property
+            if (!this.times || !this.positions || this.times.length === 0 || this.positions.length === 0) {
+                cesiumLog.warn('Cannot update entities: missing or empty times/positions data');
+                return;
+            }
+            
+            // Create a new SampledPositionProperty with corrected positions
+            const newPositionProperty = new Cesium.SampledPositionProperty();
+            newPositionProperty.setInterpolationOptions({
+                interpolationDegree: 1,  // Linear for velocity calculation
+                interpolationAlgorithm: Cesium.LinearApproximation
+            });
+            newPositionProperty.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+            newPositionProperty.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+            
+            // Add corrected samples
+            newPositionProperty.addSamples(this.times, this.positions);
+            
+            // Replace the position property
+            this.pilotEntity.position = newPositionProperty;
+            
+            // Update orientation to use the new position property (add safety check)
+            if (newPositionProperty) {
+                this.pilotEntity.orientation = new Cesium.VelocityOrientationProperty(newPositionProperty);
+            }
+        }
+        
+        // Update curtain wall if it exists
+        if (this.curtainWallEntity && this.curtainWallEntity.wall) {
+            this.curtainWallEntity.wall.positions = new Cesium.ConstantProperty(this.positions);
+        }
+        
+        cesiumLog.debug('Updated entities with new positions');
     }
     
     _createPilotEntity() {
@@ -453,6 +787,11 @@ class FlightDataSource extends Cesium.CustomDataSource {
     }
     
     _createCurtainWall() {
+        // Get altitudes for the wall - use corrected altitudes if available
+        const wallAltitudes = this.altitudeCorrectionApplied ? 
+            this.correctedAltitudes : 
+            this.igcPoints.map(p => p.gpsAltitude || p.altitude);
+            
         // Static curtain wall
         this.staticCurtainEntity = this.entities.add({
             id: 'static-curtain',
@@ -460,7 +799,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
             show: true,
             wall: {
                 positions: this.positions,
-                maximumHeights: this.igcPoints.map(p => p.altitude),
+                maximumHeights: wallAltitudes,
                 material: Cesium.Color.DODGERBLUE.withAlpha(0.2),
                 outline: false
             }
@@ -510,7 +849,13 @@ class FlightDataSource extends Cesium.CustomDataSource {
         
         const windowSize = this._calculateRibbonWindow();
         const startIdx = Math.max(0, index - windowSize + 1);
-        return this.igcPoints.slice(startIdx, index + 1).map(p => p.altitude);
+        
+        // Use corrected altitudes if available
+        if (this.altitudeCorrectionApplied) {
+            return this.correctedAltitudes.slice(startIdx, index + 1);
+        } else {
+            return this.igcPoints.slice(startIdx, index + 1).map(p => p.gpsAltitude || p.altitude);
+        }
     }
     
     _calculateRibbonWindow() {
@@ -549,7 +894,6 @@ class FlightDataSource extends Cesium.CustomDataSource {
         // Calculate speed if not provided
         let speed = point.groundSpeed || 0;
         if (!speed && index > 0) {
-            const prevPoint = this.igcPoints[index - 1];
             const distance = Cesium.Cartesian3.distance(
                 this.positions[index - 1],
                 this.positions[index]
@@ -563,8 +907,13 @@ class FlightDataSource extends Cesium.CustomDataSource {
             }
         }
         
+        // Use corrected altitude for display if available, otherwise original GPS altitude
+        const displayAltitude = this.altitudeCorrectionApplied ? 
+            this.correctedAltitudes[index] : 
+            (point.gpsAltitude || point.altitude || 0);
+        
         return {
-            altitude: point.gpsAltitude || point.altitude || 0,
+            altitude: displayAltitude,
             climbRate: point.climbRate || 0,
             speed: speed,
             time: this.times[index],
@@ -580,6 +929,131 @@ class FlightDataSource extends Cesium.CustomDataSource {
             this.timezoneOffsetSeconds, 
             new Cesium.JulianDate()
         );
+    }
+    
+    _initializeTerrainButtonState() {
+        // Wait for button to exist in DOM with retry logic
+        const checkButton = () => {
+            const button = document.getElementById('terrainButton');
+            if (button && this.viewer?.scene?.globe) {
+                // Check if terrain is enabled (not undefined or ellipsoid)
+                const terrainProvider = this.viewer.terrainProvider;
+                const isTerrainEnabled = terrainProvider && 
+                    terrainProvider.constructor.name !== 'EllipsoidTerrainProvider';
+                
+                // Update tracked state
+                this._terrainEnabled = isTerrainEnabled;
+                
+                if (isTerrainEnabled) {
+                    button.classList.add('active');
+                    cesiumLog.debug('Terrain button initialized - terrain is enabled');
+                } else {
+                    button.classList.remove('active');
+                    cesiumLog.debug('Terrain button initialized - terrain is disabled');
+                }
+            } else {
+                // Retry if button or viewer not ready
+                setTimeout(checkButton, 50);
+            }
+        };
+        checkButton();
+    }
+    
+    async toggleTerrain() {
+        if (!this.viewer) {
+            cesiumLog.warn('toggleTerrain: No viewer available');
+            return;
+        }
+        
+        const button = document.getElementById('terrainButton');
+        cesiumLog.info(`toggleTerrain: Current terrain state: ${this._terrainEnabled}`);
+        
+        if (this._terrainEnabled) {
+            // Disable terrain - use ellipsoid terrain provider instead of undefined
+            cesiumLog.info('toggleTerrain: Attempting to disable terrain...');
+            try {
+                // Use ellipsoid terrain provider for clean disable
+                this.viewer.scene.setTerrain(new Cesium.EllipsoidTerrainProvider());
+                this._terrainEnabled = false;
+                cesiumLog.info('Terrain disabled successfully');
+                
+                // Update button state
+                if (button) {
+                    button.classList.remove('active');
+                }
+                
+                // Remove terrain correction and revert to GPS altitudes
+                if (this.flightDataSource) {
+                    this.flightDataSource.removeTerrainCorrection();
+                } else {
+                    cesiumLog.warn('No flight data source available for terrain correction removal');
+                }
+                
+            } catch (error) {
+                cesiumLog.error(`Failed to disable terrain: ${error.message}`);
+                // Reset state on error - don't leave in inconsistent state
+                this._terrainEnabled = this._detectInitialTerrainState();
+                if (button) {
+                    if (this._terrainEnabled) {
+                        button.classList.add('active');
+                    } else {
+                        button.classList.remove('active');
+                    }
+                }
+            }
+        } else {
+            // Enable Cesium World Terrain
+            cesiumLog.info('toggleTerrain: Attempting to enable terrain...');
+            try {
+                this.viewer.scene.setTerrain(
+                    Cesium.Terrain.fromWorldTerrain({
+                        requestWaterMask: false,
+                        requestVertexNormals: true
+                    })
+                );
+                this._terrainEnabled = true;
+                cesiumLog.info('Cesium World Terrain enabled successfully (asset ID 1)');
+                
+                // Update button state
+                if (button) {
+                    button.classList.add('active');
+                }
+                
+                // Apply terrain correction with a delay to ensure terrain is ready
+                setTimeout(async () => {
+                    const correctionApplied = await this.applyTerrainCorrection();
+                    if (!correctionApplied) {
+                        cesiumLog.warn('Terrain correction could not be applied - terrain may not be ready');
+                    }
+                }, 1500);
+                
+            } catch (error) {
+                cesiumLog.error(`Failed to enable Cesium World Terrain: ${error.message}`);
+                cesiumLog.info('Terrain requires a valid Cesium Ion token with asset access');
+                
+                // Reset state on error
+                this._terrainEnabled = false;
+                if (button) {
+                    button.classList.remove('active');
+                }
+            }
+        }
+        
+        // Final state sync check
+        setTimeout(() => {
+            const actualTerrainState = this._detectInitialTerrainState();
+            if (actualTerrainState !== this._terrainEnabled) {
+                cesiumLog.warn(`toggleTerrain: State mismatch detected - correcting (actual: ${actualTerrainState}, tracked: ${this._terrainEnabled})`);
+                this._terrainEnabled = actualTerrainState;
+                if (button) {
+                    if (this._terrainEnabled) {
+                        button.classList.add('active');
+                    } else {
+                        button.classList.remove('active');
+                    }
+                }
+            }
+        }, 500);
     }
 }
 
@@ -848,12 +1322,11 @@ class CesiumFlightApp {
         
         this.currentResolution = config.savedResolutionScale || defaultResolution;
         
-        // Create viewer with optimized settings
-        this.viewer = new Cesium.Viewer("cesiumContainer", {
-            terrain: Cesium.Terrain.fromWorldTerrain({
-                requestWaterMask: false,
-                requestVertexNormals: true
-            }),
+        // Check if user has provided their own token for terrain
+        const hasUserToken = config?.hasUserToken === true;
+        
+        // Prepare viewer options
+        const viewerOptions = {
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
             resolutionScale: this.currentResolution,  // Apply adaptive resolution scaling
@@ -874,7 +1347,21 @@ class CesiumFlightApp {
             shadows: false,
             shouldAnimate: false,
             creditContainer: document.getElementById('customCreditContainer')
-        });
+        };
+        
+        // Only include terrain if user has their own token
+        if (hasUserToken) {
+            viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain({
+                requestWaterMask: false,
+                requestVertexNormals: true
+            });
+            cesiumLog.info('Terrain enabled - user has provided Cesium Ion token');
+        } else {
+            cesiumLog.info('Terrain disabled - using app token, no terrain to prevent quota usage');
+        }
+        
+        // Create viewer with conditional terrain
+        this.viewer = new Cesium.Viewer("cesiumContainer", viewerOptions);
         
         this._configureScene();
         this._setupInitialView(config);
@@ -1219,6 +1706,7 @@ class CesiumFlightApp {
         }
     }
     
+    
     _adjustImageryLayerColors(providerName) {
         // Apply color corrections only to Sentinel-2 to reduce green tint
         if (!this.viewer?.imageryLayers || this.viewer.imageryLayers.length === 0) return;
@@ -1243,15 +1731,64 @@ class CesiumFlightApp {
         }
     }
     
-    loadFlightTrack(igcPoints) {
+    async _waitForTerrainReady(timeout = 5000) {
+        // Wait for terrain provider to be fully loaded and ready
+        const start = Date.now();
+        cesiumLog.info('Waiting for terrain provider to be ready...');
+        
+        while (Date.now() - start < timeout) {
+            const provider = this.viewer?.terrainProvider;
+            
+            if (provider) {
+                const providerName = provider.constructor.name;
+                const isReady = provider.ready;
+                // Use capability-based detection instead of class name (minification-safe)
+                const hasTerrainCapability = typeof provider.requestTileGeometry === 'function';
+                const isEllipsoid = providerName === 'EllipsoidTerrainProvider';
+                
+                cesiumLog.debug(`Terrain check: provider=${providerName}, ready=${isReady}, hasCapability=${hasTerrainCapability}, isEllipsoid=${isEllipsoid}`);
+                
+                if (isReady && hasTerrainCapability && !isEllipsoid) {
+                    cesiumLog.info(`Terrain provider ready with capability: ${providerName}`);
+                    return provider;
+                } else if (isReady && isEllipsoid) {
+                    // Ellipsoid provider is ready - no terrain will be loaded
+                    cesiumLog.info('Ellipsoid terrain provider ready - no terrain enabled');
+                    return provider;
+                }
+            }
+            
+            // Wait a bit before checking again
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        cesiumLog.warn(`Terrain provider not ready after ${timeout}ms timeout`);
+        return this.viewer?.terrainProvider || null;
+    }
+    
+    async loadFlightTrack(igcPoints) {
         if (!igcPoints?.length) return;
         
-        PerformanceReporter.measureTime('totalTrackLoad', () => {
+        const totalStart = performance.now();
+        
+        try {
             // Clear existing data
             this._clearAll();
             
-            // Create new flight data source
-            this.flightDataSource = new FlightDataSource('Flight Track', igcPoints);
+            // Wait for terrain provider to be ready before creating flight data source
+            // This prevents race conditions where terrain correction is skipped
+            await this._waitForTerrainReady();
+            
+            // Create new flight data source (this is now async)
+            this.flightDataSource = new FlightDataSource('Flight Track', igcPoints, this.viewer);
+            
+            // Wait for the flight data source to complete initialization (including terrain correction)
+            // The FlightDataSource constructor calls _initializeFlightData() which is async
+            // We need to wait for it to complete before proceeding
+            while (!this.flightDataSource.positions || this.flightDataSource.positions.length === 0) {
+                await new Promise(resolve => setTimeout(resolve, 10)); // Wait 10ms and check again
+            }
+            
             this.viewer.dataSources.add(this.flightDataSource);
             
             // Create track primitives
@@ -1272,7 +1809,13 @@ class CesiumFlightApp {
             
             // Force resize after UI changes
             setTimeout(() => this.viewer.resize(), 350);
-        });
+            
+            PerformanceReporter.report('totalTrackLoad', performance.now() - totalStart);
+            
+        } catch (error) {
+            cesiumLog.error(`Failed to load flight track: ${error.message}`);
+            throw error;
+        }
     }
     
     _configureClock() {
@@ -1730,8 +2273,10 @@ function initializeCesium(config) {
 }
 
 // Public API functions
-function createColoredFlightTrack(points) {
-    cesiumApp?.loadFlightTrack(points);
+async function createColoredFlightTrack(points) {
+    if (cesiumApp) {
+        await cesiumApp.loadFlightTrack(points);
+    }
 }
 
 function togglePlayback() {
@@ -1744,6 +2289,10 @@ function changePlaybackSpeed(speed) {
 
 function toggleCameraFollow() {
     cesiumApp?.toggleCameraFollow();
+}
+
+function toggleTerrain() {
+    cesiumApp?.flightDataSource?.toggleTerrain();
 }
 
 function changeRenderQuality(scale) {
@@ -1805,6 +2354,7 @@ window.createColoredFlightTrack = createColoredFlightTrack;
 window.togglePlayback = togglePlayback;
 window.changePlaybackSpeed = changePlaybackSpeed;
 window.toggleCameraFollow = toggleCameraFollow;
+window.toggleTerrain = toggleTerrain;
 window.cleanupCesium = cleanupCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreQualitySettings = restoreQualitySettings;
