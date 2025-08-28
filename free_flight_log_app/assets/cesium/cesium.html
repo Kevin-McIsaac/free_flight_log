@@ -167,6 +167,52 @@
             color: rgba(255, 255, 255, 0.9);
         }
         
+        /* Altitude overlay - positioned in lower right */
+        #altitudeOverlay {
+            position: fixed;
+            bottom: 100px; /* Above timeline scrubber */
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 100;
+        }
+        
+        #altitudeOverlay .altitude-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background-color: rgba(42, 42, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+            min-width: 90px;
+        }
+        
+        #altitudeOverlay .material-icons {
+            font-size: 16px;
+            color: #4FC3F7; /* Light Blue 300 - matches theme */
+        }
+        
+        #altitudeOverlay .altitude-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        #altitudeOverlay .altitude-value {
+            font-size: 11px;
+            font-weight: bold;
+            color: #FFFFFF;
+            margin-bottom: 1px;
+        }
+        
+        #altitudeOverlay .altitude-label {
+            font-size: 9px;
+            color: #B0B0B0;
+        }
+        
     </style>
 </head>
 <body>
@@ -203,6 +249,23 @@
         </select>
     </div>
     
+    <!-- Altitude overlay - launch and landing GPS altitudes -->
+    <div id="altitudeOverlay" style="display: none;">
+        <div class="altitude-item">
+            <span class="material-icons">flight_takeoff</span>
+            <div class="altitude-info">
+                <div class="altitude-value" id="launchAltitude">---m</div>
+                <div class="altitude-label">Launch</div>
+            </div>
+        </div>
+        <div class="altitude-item">
+            <span class="material-icons">flight_land</span>
+            <div class="altitude-info">
+                <div class="altitude-value" id="landingAltitude">---m</div>
+                <div class="altitude-label">Landing</div>
+            </div>
+        </div>
+    </div>
     
     <div id="customCreditContainer"></div>
     

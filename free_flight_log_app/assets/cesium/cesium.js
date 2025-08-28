@@ -777,6 +777,166 @@ class StatisticsDisplay {
 }
 
 // ============================================================================
+// Altitude Overlay Display - Launch and Landing GPS Altitudes
+// ============================================================================
+
+class AltitudeOverlay {
+    constructor(flightData, viewer) {
+        this.flightData = flightData;
+        this.viewer = viewer;
+        this.container = document.getElementById('altitudeOverlay');
+        this.launchElement = document.getElementById('launchAltitude');
+        this.landingElement = document.getElementById('landingAltitude');
+        
+        // Cache for terrain heights
+        this.terrainHeights = { launch: null, landing: null };
+        
+        cesiumLog.debug('AltitudeOverlay: Constructor initialized with viewer and flight data');
+    }
+    
+    initialize() {
+        cesiumLog.debug('AltitudeOverlay: Starting initialization');
+        
+        if (!this.flightData || !this.flightData.igcPoints || this.flightData.igcPoints.length === 0) {
+            cesiumLog.debug('AltitudeOverlay: No flight data available, hiding overlay');
+            this.hide();
+            return;
+        }
+        
+        // Extract launch and landing points
+        const launchPoint = this.flightData.igcPoints[0];
+        const landingPoint = this.flightData.igcPoints[this.flightData.igcPoints.length - 1];
+        
+        // Use GPS altitude (preferred) or fallback to altitude
+        const launchGPSAltitude = launchPoint.gpsAltitude || launchPoint.altitude || 0;
+        const landingGPSAltitude = landingPoint.gpsAltitude || landingPoint.altitude || 0;
+        
+        cesiumLog.info(`AltitudeOverlay: GPS Altitudes - Launch: ${Math.round(launchGPSAltitude)}m, Landing: ${Math.round(landingGPSAltitude)}m`);
+        
+        // Display GPS altitudes immediately for instant feedback
+        if (this.launchElement) {
+            this.launchElement.textContent = `${Math.round(launchGPSAltitude)}m GPS`;
+            cesiumLog.debug('AltitudeOverlay: Updated launch element with GPS altitude');
+        }
+        
+        if (this.landingElement) {
+            this.landingElement.textContent = `${Math.round(landingGPSAltitude)}m GPS`;
+            cesiumLog.debug('AltitudeOverlay: Updated landing element with GPS altitude');
+        }
+        
+        // Show the overlay with GPS data
+        this.show();
+        cesiumLog.debug('AltitudeOverlay: Overlay shown with GPS altitudes');
+        
+        // Store GPS altitudes for later use
+        this.launchGPSAltitude = launchGPSAltitude;
+        this.landingGPSAltitude = landingGPSAltitude;
+        this.launchPoint = launchPoint;
+        this.landingPoint = landingPoint;
+        
+        // Check if real terrain is available and enhance with AGL data
+        if (this._hasRealTerrain()) {
+            cesiumLog.info('AltitudeOverlay: Real terrain detected, starting terrain sampling');
+            this._enhanceWithTerrainData();
+        } else {
+            cesiumLog.info('AltitudeOverlay: No real terrain available, displaying GPS only');
+        }
+    }
+    
+    show() {
+        if (this.container) {
+            this.container.style.display = 'flex';
+        }
+    }
+    
+    hide() {
+        if (this.container) {
+            this.container.style.display = 'none';
+        }
+    }
+    
+    _hasRealTerrain() {
+        const terrainProvider = this.viewer?.scene?.globe?.terrainProvider;
+        
+        if (!terrainProvider) {
+            cesiumLog.debug('AltitudeOverlay: No terrain provider found');
+            return false;
+        }
+        
+        // Check if it's the default ellipsoid (no real terrain)
+        const isEllipsoid = terrainProvider instanceof Cesium.EllipsoidTerrainProvider;
+        
+        if (isEllipsoid) {
+            cesiumLog.debug('AltitudeOverlay: Terrain provider is EllipsoidTerrainProvider (no real terrain)');
+        } else {
+            cesiumLog.debug(`AltitudeOverlay: Real terrain provider detected: ${terrainProvider.constructor.name}`);
+        }
+        
+        return !isEllipsoid;
+    }
+    
+    async _enhanceWithTerrainData() {
+        try {
+            cesiumLog.debug('AltitudeOverlay: Starting terrain sampling process');
+            
+            // Create Cartographic positions from degrees
+            const launchPosition = Cesium.Cartographic.fromDegrees(
+                this.launchPoint.longitude,
+                this.launchPoint.latitude
+            );
+            
+            const landingPosition = Cesium.Cartographic.fromDegrees(
+                this.landingPoint.longitude,
+                this.landingPoint.latitude
+            );
+            
+            cesiumLog.debug(`AltitudeOverlay: Launch position - Lon: ${Cesium.Math.toDegrees(launchPosition.longitude)}, Lat: ${Cesium.Math.toDegrees(launchPosition.latitude)}`);
+            cesiumLog.debug(`AltitudeOverlay: Landing position - Lon: ${Cesium.Math.toDegrees(landingPosition.longitude)}, Lat: ${Cesium.Math.toDegrees(landingPosition.latitude)}`);
+            
+            // Sample terrain heights
+            const positions = [launchPosition, landingPosition];
+            
+            cesiumLog.info('AltitudeOverlay: Calling sampleHeightMostDetailed for terrain heights');
+            
+            const updatedPositions = await this.viewer.scene.sampleHeightMostDetailed(positions);
+            
+            cesiumLog.info('AltitudeOverlay: Terrain sampling completed successfully');
+            
+            // Store terrain heights
+            this.terrainHeights.launch = updatedPositions[0].height;
+            this.terrainHeights.landing = updatedPositions[1].height;
+            
+            cesiumLog.info(`AltitudeOverlay: Terrain heights - Launch: ${Math.round(this.terrainHeights.launch)}m, Landing: ${Math.round(this.terrainHeights.landing)}m`);
+            
+            // Calculate AGL (Above Ground Level)
+            const launchAGL = this.launchGPSAltitude - this.terrainHeights.launch;
+            const landingAGL = this.landingGPSAltitude - this.terrainHeights.landing;
+            
+            cesiumLog.info(`AltitudeOverlay: AGL calculated - Launch: ${Math.round(launchAGL)}m, Landing: ${Math.round(landingAGL)}m`);
+            
+            // Update display with AGL information
+            if (this.launchElement) {
+                this.launchElement.textContent = `${Math.round(this.launchGPSAltitude)}m / ${Math.round(launchAGL)}m AGL`;
+                cesiumLog.debug('AltitudeOverlay: Updated launch display with AGL');
+            }
+            
+            if (this.landingElement) {
+                this.landingElement.textContent = `${Math.round(this.landingGPSAltitude)}m / ${Math.round(landingAGL)}m AGL`;
+                cesiumLog.debug('AltitudeOverlay: Updated landing display with AGL');
+            }
+            
+            cesiumLog.info('AltitudeOverlay: Display updated with GPS and AGL altitudes');
+            
+        } catch (error) {
+            cesiumLog.error(`AltitudeOverlay: Error sampling terrain heights: ${error.message}`);
+            cesiumLog.debug(`AltitudeOverlay: Full error details: ${error.stack}`);
+            // Keep GPS-only display on error
+            cesiumLog.info('AltitudeOverlay: Falling back to GPS-only display due to terrain sampling error');
+        }
+    }
+}
+
+// ============================================================================
 // Main Cesium Flight Application
 // ============================================================================
 
@@ -786,6 +946,7 @@ class CesiumFlightApp {
         this.flightDataSource = null;
         this.trackPrimitives = null;
         this.statisticsDisplay = null;
+        this.altitudeOverlay = null;
         this.performanceMonitor = null;
         this.cameraFollowing = false;
         this._ribbonModeAuto = true;
@@ -1261,6 +1422,10 @@ class CesiumFlightApp {
             this.statisticsDisplay = new StatisticsDisplay(this.flightDataSource);
             this.statisticsDisplay.initialize();
             
+            // Create altitude overlay display with viewer for terrain sampling
+            this.altitudeOverlay = new AltitudeOverlay(this.flightDataSource, this.viewer);
+            this.altitudeOverlay.initialize();
+            
             // Configure clock
             this._configureClock();
             
@@ -1549,11 +1714,13 @@ class CesiumFlightApp {
         this.viewer.scene.primitives.removeAll();
         
         this.statisticsDisplay?.hide();
+        this.altitudeOverlay?.hide();
     }
     
     cleanup() {
         this._clearAll();
         this.statisticsDisplay = null;
+        this.altitudeOverlay = null;
         
         if (this.viewer) {
             this.viewer.scene.requestRenderMode = true;
