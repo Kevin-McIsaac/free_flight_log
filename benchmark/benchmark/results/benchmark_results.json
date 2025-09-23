@@ -1,0 +1,379 @@
+{
+  "metadata": {
+    "generatedAt": "2025-09-23T10:42:45.825427",
+    "totalTests": 45,
+    "strategies": [
+      "Strategy A: Spatial Index Only",
+      "Strategy B: Spatial + Separate Indexes",
+      "Strategy C: Single Covering Index"
+    ],
+    "regions": [
+      "Perth",
+      "Continental Australia",
+      "France"
+    ],
+    "runsPerTest": 5
+  },
+  "results": [
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Perth",
+      "run": 1,
+      "durationMs": 13,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Perth",
+      "run": 2,
+      "durationMs": 12,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Perth",
+      "run": 3,
+      "durationMs": 13,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Perth",
+      "run": 4,
+      "durationMs": 18,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Perth",
+      "run": 5,
+      "durationMs": 17,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Continental Australia",
+      "run": 1,
+      "durationMs": 249,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Continental Australia",
+      "run": 2,
+      "durationMs": 233,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Continental Australia",
+      "run": 3,
+      "durationMs": 188,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Continental Australia",
+      "run": 4,
+      "durationMs": 239,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "Continental Australia",
+      "run": 5,
+      "durationMs": 225,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "France",
+      "run": 1,
+      "durationMs": 231,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "France",
+      "run": 2,
+      "durationMs": 190,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "France",
+      "run": 3,
+      "durationMs": 229,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "France",
+      "run": 4,
+      "durationMs": 222,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy A: Spatial Index Only",
+      "strategyIndex": 0,
+      "region": "France",
+      "run": 5,
+      "durationMs": 264,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Perth",
+      "run": 1,
+      "durationMs": 12,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Perth",
+      "run": 2,
+      "durationMs": 13,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Perth",
+      "run": 3,
+      "durationMs": 12,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Perth",
+      "run": 4,
+      "durationMs": 15,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Perth",
+      "run": 5,
+      "durationMs": 12,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Continental Australia",
+      "run": 1,
+      "durationMs": 129,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Continental Australia",
+      "run": 2,
+      "durationMs": 130,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Continental Australia",
+      "run": 3,
+      "durationMs": 124,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Continental Australia",
+      "run": 4,
+      "durationMs": 153,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "Continental Australia",
+      "run": 5,
+      "durationMs": 115,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "France",
+      "run": 1,
+      "durationMs": 160,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "France",
+      "run": 2,
+      "durationMs": 153,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "France",
+      "run": 3,
+      "durationMs": 124,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "France",
+      "run": 4,
+      "durationMs": 166,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy B: Spatial + Separate Indexes",
+      "strategyIndex": 1,
+      "region": "France",
+      "run": 5,
+      "durationMs": 145,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Perth",
+      "run": 1,
+      "durationMs": 19,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Perth",
+      "run": 2,
+      "durationMs": 18,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Perth",
+      "run": 3,
+      "durationMs": 18,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Perth",
+      "run": 4,
+      "durationMs": 15,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Perth",
+      "run": 5,
+      "durationMs": 16,
+      "resultCount": 87
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Continental Australia",
+      "run": 1,
+      "durationMs": 84,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Continental Australia",
+      "run": 2,
+      "durationMs": 113,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Continental Australia",
+      "run": 3,
+      "durationMs": 98,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Continental Australia",
+      "run": 4,
+      "durationMs": 83,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "Continental Australia",
+      "run": 5,
+      "durationMs": 97,
+      "resultCount": 4672
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "France",
+      "run": 1,
+      "durationMs": 106,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "France",
+      "run": 2,
+      "durationMs": 106,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "France",
+      "run": 3,
+      "durationMs": 89,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "France",
+      "run": 4,
+      "durationMs": 98,
+      "resultCount": 1834
+    },
+    {
+      "strategy": "Strategy C: Single Covering Index",
+      "strategyIndex": 2,
+      "region": "France",
+      "run": 5,
+      "durationMs": 95,
+      "resultCount": 1834
+    }
+  ]
+}

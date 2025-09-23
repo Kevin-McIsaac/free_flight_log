@@ -1,0 +1,46 @@
+Strategy,Region,Run,DurationMs,ResultCount
+Strategy A: Spatial Index Only,Perth,1,13,87
+Strategy A: Spatial Index Only,Perth,2,12,87
+Strategy A: Spatial Index Only,Perth,3,13,87
+Strategy A: Spatial Index Only,Perth,4,18,87
+Strategy A: Spatial Index Only,Perth,5,17,87
+Strategy A: Spatial Index Only,Continental Australia,1,249,4672
+Strategy A: Spatial Index Only,Continental Australia,2,233,4672
+Strategy A: Spatial Index Only,Continental Australia,3,188,4672
+Strategy A: Spatial Index Only,Continental Australia,4,239,4672
+Strategy A: Spatial Index Only,Continental Australia,5,225,4672
+Strategy A: Spatial Index Only,France,1,231,1834
+Strategy A: Spatial Index Only,France,2,190,1834
+Strategy A: Spatial Index Only,France,3,229,1834
+Strategy A: Spatial Index Only,France,4,222,1834
+Strategy A: Spatial Index Only,France,5,264,1834
+Strategy B: Spatial + Separate Indexes,Perth,1,12,87
+Strategy B: Spatial + Separate Indexes,Perth,2,13,87
+Strategy B: Spatial + Separate Indexes,Perth,3,12,87
+Strategy B: Spatial + Separate Indexes,Perth,4,15,87
+Strategy B: Spatial + Separate Indexes,Perth,5,12,87
+Strategy B: Spatial + Separate Indexes,Continental Australia,1,129,4672
+Strategy B: Spatial + Separate Indexes,Continental Australia,2,130,4672
+Strategy B: Spatial + Separate Indexes,Continental Australia,3,124,4672
+Strategy B: Spatial + Separate Indexes,Continental Australia,4,153,4672
+Strategy B: Spatial + Separate Indexes,Continental Australia,5,115,4672
+Strategy B: Spatial + Separate Indexes,France,1,160,1834
+Strategy B: Spatial + Separate Indexes,France,2,153,1834
+Strategy B: Spatial + Separate Indexes,France,3,124,1834
+Strategy B: Spatial + Separate Indexes,France,4,166,1834
+Strategy B: Spatial + Separate Indexes,France,5,145,1834
+Strategy C: Single Covering Index,Perth,1,19,87
+Strategy C: Single Covering Index,Perth,2,18,87
+Strategy C: Single Covering Index,Perth,3,18,87
+Strategy C: Single Covering Index,Perth,4,15,87
+Strategy C: Single Covering Index,Perth,5,16,87
+Strategy C: Single Covering Index,Continental Australia,1,84,4672
+Strategy C: Single Covering Index,Continental Australia,2,113,4672
+Strategy C: Single Covering Index,Continental Australia,3,98,4672
+Strategy C: Single Covering Index,Continental Australia,4,83,4672
+Strategy C: Single Covering Index,Continental Australia,5,97,4672
+Strategy C: Single Covering Index,France,1,106,1834
+Strategy C: Single Covering Index,France,2,106,1834
+Strategy C: Single Covering Index,France,3,89,1834
+Strategy C: Single Covering Index,France,4,98,1834
+Strategy C: Single Covering Index,France,5,95,1834
